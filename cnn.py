@@ -11,13 +11,13 @@ from datetime import datetime
 class Config(object):
 # Holds data information and model hyperparameters
     
-    embed_size = 25
+    embed_size = 50
     batch_size = 32
     hidden_size = 100 
     label_size = 3
     sentence_length = 140
     filters = [1,2]
-    num_of_filters = 10  #num of_filters of each size
+    num_of_filters = 30  #num of_filters of each size
     max_epoch = 100
     early_stopping = 2
     dropout = 0.5
@@ -25,7 +25,7 @@ class Config(object):
     l2_conv = 0.001
     l2_softmax = 0.001
     activation = "tanh"   #tanh or relu
-    activation_hidden = "tanh"
+    activation_hidden = None
     real_analysis = None
 
 class Model(object):
@@ -77,22 +77,22 @@ class Model(object):
             self.test_data = self.test_data[:1024,:]
             self.test_labels = self.test_labels[:1024,:]
             self.test_gates = self.test_gates[:1024,:]
-	
+    
     def load_real_data(self,datafile):
-	    self.wv,self.word_to_index,self.index_to_word = load_wv(self.config.embed_size)
+        self.wv,self.word_to_index,self.index_to_word = load_wv(self.config.embed_size)
 
     # load real dataset in index_form, labels are all zeros
-            real_data = []
-            real_gates = []
-            real_labels = []
-            zero_pad = len(self.index_to_word)
-            for sentence, attitude in get_dataset(datafile):
-                real_data.append(get_indexForm(sentence,self.word_to_index))
-                real_gates.append([float(x!=zero_pad) for x in real_data[-1]])
-            	real_labels.append(get_polarity(attitude))
-            self.real_data = np.array(real_data)
-            self.real_gates = np.array(real_gates)
-	    self.real_labels = np.array(real_labels)
+        real_data = []
+        real_gates = []
+        real_labels = []
+        zero_pad = len(self.index_to_word)
+        for sentence, attitude in get_dataset(datafile):
+            real_data.append(get_indexForm(sentence,self.word_to_index))
+            real_gates.append([float(x!=zero_pad) for x in real_data[-1]])
+            real_labels.append(get_polarity(attitude))
+        self.real_data = np.array(real_data)
+        self.real_gates = np.array(real_gates)
+        self.real_labels = np.array(real_labels)
 
 
     def add_placeholders(self):
@@ -261,16 +261,17 @@ class Model(object):
     def __init__(self,config):
         self.config = config
         self.LOGDIR = "./log/{}d-{}/".format(config.embed_size,config.activation)
-        if config.activition_hidden is None:
+        if config.activation_hidden is None:
             self.LOGDIR = self.LOGDIR + "1layer-{},{}/".format(config.num_of_filters,config.filters)
             self.LOGDIR = self.LOGDIR + "lr={},l2_conv={}/".format(config.lr,config.l2_conv)
         else:
             self.LOGDIR = self.LOGDIR + "2layers-{}d{}-{},{}/".format(config.hidden_size,config.activation_hidden,config.num_of_filters,config.filters)
             self.LOGDIR = self.LOGDIR + "lr={},l2_conv={},l2_soft={}/".format(config.lr,config.l2_conv,config.l2_softmax)
-	      if config.real_analysis is None:
-            self.load_data()
-	      else:
-	          self.load_real_data(config.real_analysis)
+
+        if config.real_analysis is None:
+            self.load_data(debug=True)
+        else:
+            self.load_real_data(config.real_analysis)
         self.add_placeholders()
         self.add_embedding()
         features = self.filter_max_pooling(self.config.activation)
@@ -341,7 +342,7 @@ class Model(object):
             if results is None:
               results = predictions_3d
             else:
-              results = np.concatenate(results,predictions_3d)
+              results = np.concatenate((results,predictions_3d),axis=0)
 
         # projections are predicted results projected onto the axis corresponding to the answers
         if test is False:
@@ -382,14 +383,14 @@ def save_test_results(config,results_file,loss,confusion,loss_and_acc):
     with open(results_file,"a+") as out:
         out.write(now + "\n")
         out.write("Results of twitter datasets using cnn:\n")
-      	out.write("{}d-{} with batch {}\n".format(config.embed_size,config.activation,config.batch_size))
+        out.write("{}d-{} with batch {}\n".format(config.embed_size,config.activation,config.batch_size))
         if config.activation_hidden is None:
           out.write("1layer-{}d,{} filters\n".format(config.num_of_filters,",".join([str(num) for num in config.filters])))
           out.write("lr={},l2_conv={},l2_soft={}\n".format(config.lr,config.l2_conv,config.l2_softmax))
         else:
           out.write("2layers-hidden_{},{}d-{}d,{} filters\n".format(config.activation_hidden,config.hidden_size,config.num_of_filters,",".join([str(num) for num in config.filters])))
           out.write("lr={},l2_conv={},l2_soft={}\n".format(config.lr,config.l2_conv,config.l2_softmax))
-      	out.write("dropout: {}\n".format(config.dropout))
+        out.write("dropout: {}\n".format(config.dropout))
 
         out.write("Losses of train and val datasets:\n")
         out.write(','.join([str(item) for item in loss_and_acc[0]])+'\n')
@@ -478,9 +479,12 @@ def run_cnn(config,results_file):
                   val_losses.append(val_loss)
                   val_accs.append(val_acc)
 
+                  """
                   print "training loss: {}, training accuracy: {}".format(train_loss,train_acc)
-                  print "validation loss: {}, confusion:\n".format(val_loss)
+                  print "validation loss: {}, acc: {}, confusion:\n".format(val_loss,val_acc)
+                  
                   print_confusion(val_confusion)
+                  """
 
                   if val_loss < best_val_loss:
                       best_val_loss = val_loss
@@ -491,17 +495,19 @@ def run_cnn(config,results_file):
                   if epoch - best_val_epoch > config.early_stopping:
                       break
 
-                  print "Total time: {}".format(time.time()-start)
+                  #print "Total time: {}".format(time.time()-start)
              
+             print "validation acc: {}, confusion:\n".format(val_accs[-1])
              save_projections(model.LOGDIR)
-             loss_and_acc = np.concatenate((train_losses,val_losses,train_accs,val_accs),axis=0)
-              
+             loss_and_acc = np.stack((train_losses,val_losses,train_accs,val_accs),axis=0)
              saver.restore(session,"./weights/cnn-weights")
              print "Test:"
              test_loss,test_acc,test_confusion = model.predict(session,test=True)
              print "test loss: {}, confusion:\n".format(test_loss)
              print_confusion(test_confusion)
              save_test_results(config,results_file,test_loss,test_confusion,loss_and_acc)
+             
+             return val_accs[-1]
 
 def param_opt(results_file):
     
@@ -584,7 +590,7 @@ def a_lot_of_samples(config,output='./total_biases.txt',input_dir='./real_data/'
                  out.write(filename + '  ' + bias + '\n')
         
     
-		
+        
 
 
 
