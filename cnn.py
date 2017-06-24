@@ -16,7 +16,7 @@ class Config(object):
     hidden_size = 100 
     label_size = 3
     sentence_length = 140
-    filters = [1,2]
+    filters = [1,2,3,4,5,8,15]
     num_of_filters = 30  #num of_filters of each size
     max_epoch = 100
     early_stopping = 2
@@ -269,7 +269,7 @@ class Model(object):
             self.LOGDIR = self.LOGDIR + "lr={},l2_conv={},l2_soft={}/".format(config.lr,config.l2_conv,config.l2_softmax)
 
         if config.real_analysis is None:
-            self.load_data(debug=True)
+            self.load_data(debug=False)
         else:
             self.load_real_data(config.real_analysis)
         self.add_placeholders()
@@ -434,6 +434,7 @@ def save_projections(logdir):
         with open(projs_file,"a+") as out:
             out.write(','.join([str(item) for item in line])+'\n')
 
+    print "Proj file saved, tmp file to be deleted."
     os.remove(projs_tmp)
 
     
@@ -479,12 +480,10 @@ def run_cnn(config,results_file):
                   val_losses.append(val_loss)
                   val_accs.append(val_acc)
 
-                  """
                   print "training loss: {}, training accuracy: {}".format(train_loss,train_acc)
                   print "validation loss: {}, acc: {}, confusion:\n".format(val_loss,val_acc)
                   
                   print_confusion(val_confusion)
-                  """
 
                   if val_loss < best_val_loss:
                       best_val_loss = val_loss
@@ -517,32 +516,28 @@ def param_opt(results_file):
          temp = temp[:-4] + '0.txt'
        results_file = temp
     
-    lr_list = [0.001]
-    l2_conv_list = [1E-6]
-    l2_softmax_list = [1E-6]
-    hidden_size_list = [100]
-    num_of_filters_list = [100]
+    lr_list = [0.01,0.001,0.0001]
+    l2_conv_list = [1E-1,1E-3,1E-5]
+    num_of_filters_list = [1,5,10,20,30,50]
     dropout_list = [0.5]
-    filters_list = [[2,3,6,7,10,13],[3,6,7,10],[3,6,7,13,18],[6,7,10]]
-    activation_hidden_list = ["tanh"]
+    filters_list = [[1,2,3,4,5,8,15]]
+    activation_list = ["tanh","relu"]
     config = Config()
     for lr in lr_list:
         config.lr = lr
         for l2_conv in l2_conv_list:
             config.l2_conv = l2_conv
-            for l2_softmax in l2_softmax_list:
-                config.l2_softmax = l2_softmax
-                for num_of_filters in num_of_filters_list:
+            config.l2_softmax = l2_conv
+            for num_of_filters in num_of_filters_list:
                     config.num_of_filters = num_of_filters
                     for dropout in dropout_list:
                         config.dropout = dropout
                         for filters in filters_list:
                             config.filters = filters
-                            for hidden_size in hidden_size_list:
-                                config.hidden_size = hidden_size
-                                for activation_hidden in activation_hidden_list:
-                                    config.activation_hidden = activation_hidden
-                                    run_cnn(config,results_file)
+                            for activation in activation_list:
+                              config.activation = activation
+                              run_cnn(config,results_file)
+                            
 
 def weight_function(pred):
     if pred == 0:
@@ -596,8 +591,8 @@ def a_lot_of_samples(config,output='./total_biases.txt',input_dir='./real_data/'
 
 if __name__=="__main__":
   now = str(datetime.now())
-  results_file = "results_" + now[5:10]+"_0.txt" 
-  param(results_file)
+  results_file = "./log/results_" + now[5:10]+"_0.txt" 
+  param_opt(results_file)
 
 
 

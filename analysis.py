@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-import re
+import re,sys
 import numpy as np
 
 class Model_params(object):
@@ -131,7 +131,11 @@ class Analysis(object):
   # return a list of tuples,(ind,train_acc,val_acc) in the ascending order of the val_acc
   def big10_accs(self,selected_samples=10):
       val_tuples = list(enumerate(self.converged_v_accs))
-      big10_accs = sorted(val_tuples,key=lambda val: val[1])[-selected_samples:]
+      if len(val_tuples) > 10:
+        big10_accs = sorted(val_tuples,key=lambda val: val[1])[-selected_samples:]
+      else:
+        big10_accs = sorted(val_tuples,key=lambda val: val[1])
+
       results = []
       for ind,val_acc in big10_accs:
           results.append((ind,self.converged_t_accs[ind],val_acc))
@@ -222,6 +226,16 @@ def print_params(idx,inp_file):
                       line = inp.readline()
                       total -= 1
                       print line
+                    total = 3
+                    while line[0:8] != "postive,":
+                      line = inp.readline()
+                    while total>0:
+                      print line
+                      line = inp.readline()
+                      total -= 1
+                    while line[0:17] != "Accuracy of Test:":
+                      line = inp.readline()
+                    print line
                     print '\n'
                     return
                  else:
@@ -230,11 +244,46 @@ def print_params(idx,inp_file):
                
       raise TypeError('Wrong index of trained model used.') 
 
-if __name__ == "__main__":
-  ana = Analysis('./results.txt')
+def save_params(idx,inp_file,output):
+      count = 0
+      with open(inp_file,"r") as inp:
+           line = inp.readline()
+           while line:
+              if line[:7] == 'Results':
+                 if count == idx:
+#5 lines are put into the list of param_strings
+                    total = 4
+                    print "Model index in file " + inp_file + ":{}\n".format(idx)
+                    while total > 0:
+                      line = inp.readline()
+                      total -= 1
+                      print line
+                    total = 3
+                    while line[0:8] != "postive,":
+                      line = inp.readline()
+                    while total>0:
+                      print line
+                      line = inp.readline()
+                      total -= 1
+                    while line[0:17] != "Accuracy of Test:":
+                      line = inp.readline()
+                    print line
+                    print '\n'
+                    return
+                 else:
+                    count += 1
+              line = inp.readline()
+               
+      raise TypeError('Wrong index of trained model used.') 
+
+def main(inp):
+  ana = Analysis(inp)
   for trial in ana.big10:
-    print_params(trial[0],'./results.txt')
+    print_params(trial[0],inp)
   ana.graph_big10()
+
+if __name__ == "__main__":
+  main(sys.argv[1])
 
 
 

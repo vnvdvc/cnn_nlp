@@ -51,6 +51,30 @@ class Node(object):
       inp.write(','.join([str(filt) for filt in self.filters])+"\n")
       inp.write(str(self.value)+"\n")
       inp.write(str(int(self.complete))+"\n")
+      return
+
+#Check if one node is the ancestor of the other node, if True return the child
+  def is_ancestor(self,node):
+    if len(node.filters) < len(self.filters):
+      small = self
+      big = node
+    elif len(node.filters) > len(self.filters):
+      small = node
+      big = self
+    else:
+      if node.filters == self.filters:
+        raise KeyError("Fatal: Same node visited twice!\n"+"filters: {}".format(self.filters))
+      else:
+        return False
+    i = 1
+    while i <= len(small.filters):
+      if big.filters == small.filters[:-i]:
+        return small
+      i += 1
+    return False
+
+
+
 
 
 
@@ -129,6 +153,8 @@ class Opt(object):
     with open(filename,"r") as inp:
       line = inp.readline()
       while line != "root\n":
+        if line.isspace():
+          line = inp.readline()
         if line[-1] == "\n":
           line = line[:-1]
         filters = [int(filt) for filt in re.split(',+',line)]
@@ -143,6 +169,8 @@ class Opt(object):
 
       line = inp.readline()
       while line != '':
+        if line.isspace():
+          line = inp.readline()
         if line[-1] == "\n":
           line = line[:-1]
         filters = [int(filt) for filt in re.split(',+',line)]
@@ -172,6 +200,7 @@ class Opt(object):
           curr_node.parent = parent
 
         line = inp.readline()
+      return
           
 
 
@@ -193,9 +222,9 @@ do not improve the result either.
     name = self.special.name
     domain = self.special.domain
     num_of_nodes = 0
-    checkpt = 50
+    checkpt = 30
     if treefile is not None:
-      root,good_nodes = read_filter_tree(treefile)
+      root,good_nodes = self.read_filter_tree(treefile)
       curr_node = root
       while curr_node.complete is False:
         for node in curr_node.children:
@@ -228,7 +257,7 @@ do not improve the result either.
           newnode.parent = curr_node.parent
       num_of_nodes += 1
       if num_of_nodes % checkpt == 0:
-        save_filter_tree(root,good_nodes)
+        self.save_filter_tree(root,good_nodes)
       for filter_idx in range(len(domain)):
         if domain[filter_idx] == temp_filter[-1]:
           break
@@ -237,19 +266,34 @@ do not improve the result either.
         newnode.complete = True
         newnode.parent.complete = True
         if newnode.value > newnode.parent.value:
-          good_nodes.append(newnode)
+          curr_node = newnode
         else:
-          good_nodes.append(newnode.parent)
+          curr_node = newnode.parent
+        temporary_counter = 0
+        temporary_index = 0
+        while temporary_index < len(good_nodes):
+          node = good_nodes[temporary_index]
+          small =  node.is_ancestor(newnode)
+          if small is False:
+            temporary_index += 1
+            continue
+          else:
+            temporary_counter = 1
+            break
+        if temporary_counter == 0:
+          good_nodes.append(curr_node)
+        else:
+          good_nodes[temporary_index] = small
 
         print "good_nodes:\n"
         for node in good_nodes:
             print str(node.filters)
 
-        curr_node = newnode
         while curr_node.complete: 
           while curr_node.complete:
             if curr_node.filters == root.filters:
               print "Optimization completed!"
+              print "# of nodes calculated: {}".format(num_of_nodes)
               return
             curr_node = curr_node.parent
           
@@ -262,10 +306,7 @@ do not improve the result either.
 #If temp_filter is a subset of a "good" filter, which comes from a good node, the optimization will be constrained within the good filter, based on Assumption 2.
 
           if good_nodes != []:
-            num_of_nodes = len(good_nodes)
-            node_idx = 0
-            while node_idx < num_of_nodes:
-              node = good_nodes[node_idx]
+            for node in good_nodes:
               for filt in temp_filter:
                 if filt not in node.filters:
                   break
@@ -287,7 +328,7 @@ do not improve the result either.
                       newnode.parent = local_curr_node
                       num_of_nodes += 1
                       if num_of_nodes % checkpt == 0:
-                        save_filter_tree(root,good_nodes)
+                        self.save_filter_tree(root,good_nodes)
                       if temp_acc > curr_node.value:
                         local_curr_node = newnode
                       else:
@@ -297,16 +338,11 @@ do not improve the result either.
                       else:
                         temp_filter = local_curr_node.filters + [local_domain[idx+1]]
                       idx += 1
-                    good_nodes.append(local_curr_node)
-                    print "good nodes: 2\n"
-                    for node_temp in good_nodes:
-                      print node_temp.filters
                     if curr_node.children[-1].filters[-1] == domain[-1]:
                       curr_node.complete = True
                     else:
                       curr_node = curr_node.children[-1]
 
-              node_idx += 1
           else:
             break
 
@@ -325,7 +361,73 @@ do not improve the result either.
 
       if root.children[-1].filters == domain[-1:]:
          print "Optimization completed!"
+         print "# of nodes calculated: {}".format(num_of_nodes)
          return
+
+  def full_tree(self,treefile=None):
+    config = self.best_config
+    domain = self.special.domain
+    num_of_nodes = 0
+    checkpt = 30
+    if treefile is not None:
+      root,good_nodes = self.read_filter_tree(treefile)
+      curr_node = root
+      while curr_node.complete is False:
+        for node in curr_node.children:
+          if node.complete is False:
+            curr_node = node
+            break
+        if curr_node.children == []:
+          break
+      for filter_idx in range(len(domain)):
+        if domain[filter_idx] == temp_filter[-1]:
+          break
+      temp_filter = curr_node.filters + [domain[filter_idx+1]]
+
+    else:
+      root = Node([],0.0)
+      curr_node = root
+      temp_filter = domain[:1]
+      good_nodes = []
+
+    while True:
+      config.filters = temp_filter
+      temp_acc = self.single_cal(config)
+      newnode = Node(temp_filter,temp_acc)
+      if curr_node.is_child(newnode):
+          curr_node.children.append(newnode)
+          newnode.parent = curr_node
+      else:
+          print "Error!:\n" + "child: " + str(newnode.filters) +"\nparent: " + str(curr_node.filters)
+          return
+      num_of_nodes += 1
+      if num_of_nodes % checkpt == 0:
+        self.save_filter_tree(root,good_nodes)
+      for filter_idx in range(len(domain)):
+        if domain[filter_idx] == temp_filter[-1]:
+          break
+#check if newnode is the leaf 
+      if filter_idx == len(domain) - 1:
+        newnode.complete = True
+        curr_node.complete = True
+        while curr_node.complete:
+          if curr_node.filters == root.filters:
+            print "Optimization completed!"
+            print "Calculated nodes: {}".format(num_of_nodes)
+            return
+          curr_node = curr_node.parent
+
+        print curr_node.filters
+        temp_filter = curr_node.children[-1].filters
+        for filter_idx in range(len(domain)):
+          if domain[filter_idx] == temp_filter[-1]:
+            break
+        temp_filter = curr_node.filters + [domain[filter_idx+1]]
+
+      else:
+        curr_node = newnode
+        temp_filter = curr_node.filters + [domain[filter_idx+1]]
+
 
 
 if __name__ == "__main__":
@@ -335,10 +437,10 @@ if __name__ == "__main__":
     output = output[:-4] + "0.txt"
 
   config = Config()
-  #domain = [1,2,3,4,5,6,7,8,9,10,15,20,30,50]
-  domain = [1,2,3,4]
+  domain = [1,2,3,4,5,6,7,8,9,10,15]
   filters = Discrete("filters",domain)
   
   opt = Opt(config,None,filters,output)
-  opt.optimal_filters()
+  # opt.optimal_filters()
+  opt.full_tree()
   
